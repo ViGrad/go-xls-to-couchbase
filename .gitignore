@@ -1,3 +1,7 @@
 go-xls-to-couchbase
 
+*.json
+*.xlsx
+*.txt
+
 .DS_STORE
