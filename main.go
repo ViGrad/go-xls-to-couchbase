@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -73,11 +74,14 @@ func readFile(fileName string, startingLine int, ignored []string) {
 }
 
 func readSheet(sheet *xlsx.Sheet, startingLine int) {
+	MAX_QUERIES_PER_FILE := 3000
 
 	keys := []string{}
 	values := []string{}
 	m := map[string]interface{}{}
-	finalMap := []map[string]interface{}{}
+	sheetName := cleanString(sheet.Name)
+	nbRequests := 1
+	var buffer bytes.Buffer
 
 	for rowIndex, row := range sheet.Rows {
 		if rowIndex >= startingLine {
@@ -88,10 +92,6 @@ func readSheet(sheet *xlsx.Sheet, startingLine int) {
 				values = readRow(row)
 
 				for i, key := range keys {
-					// fmt.Printf("key %s", key)
-					// fmt.Printf("\n")
-					// fmt.Printf("value %s", values[i])
-					// fmt.Printf("\n")
 					if key != "" && values[i] != "" {
 						intValue, err := strconv.Atoi(values[i])
 
@@ -102,17 +102,36 @@ func readSheet(sheet *xlsx.Sheet, startingLine int) {
 						}
 					}
 				}
-				finalMap = append(finalMap, m)
 
+				jsonString, _ := json.Marshal(m)
+				buffer.WriteString("(\"" + sheetName + strconv.Itoa(rowIndex) + "\", " + string(jsonString) + "), \n")
+
+				if rowIndex%MAX_QUERIES_PER_FILE == 0 {
+					createRequestFile(sheetName, buffer.String(), nbRequests)
+					buffer.Reset()
+					nbRequests++
+				}
 			}
 		}
 	}
 
-	jsonString, _ := json.Marshal(finalMap)
+	createRequestFile(sheetName, buffer.String(), nbRequests)
+}
 
-	request := "UPSERT INTO CouchbaseProject (KEY, VALUE) VALUES (\"" + sheet.Name + "\", " + string(jsonString) + ") RETURNING *"
+func createRequestFile(bucketName string, queries string, num int) {
+	str := "UPSERT INTO " + bucketName + " (KEY, VALUE) VALUES \n" + strings.TrimRight(queries, ", \n") + " Returning *;"
+	bytes := []byte(str)
 
-	ioutil.WriteFile(sheet.Name+".query.txt", []byte(request), 0644)
+	ioutil.WriteFile(bucketName+strconv.Itoa(num)+".query.txt", bytes, 0644)
+}
+
+func cleanString(str string) string {
+	str = strings.Replace(str, "'", "", -1)
+	str = strings.Replace(str, "é", "e", -1)
+	str = strings.Replace(str, " ", "_", -1)
+	str = strings.Replace(str, "-", "", -1)
+
+	return str
 }
 
 func readRow(row *xlsx.Row) []string {
