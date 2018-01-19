@@ -20,57 +20,42 @@ var (
 	ignoring     string
 )
 
-func main() {
-	flag.Parse()
+func cleanString(str string) string {
+	str = strings.Replace(str, "'", "", -1)
+	str = strings.Replace(str, "é", "e", -1)
+	str = strings.Replace(str, " ", "_", -1)
+	str = strings.Replace(str, "-", "", -1)
 
-	// if user does not supply flags, print usage
-	// we can clean this up later by putting this into its own function
-	if flag.NFlag() == 0 {
-		fmt.Printf("Usage: %s [options]\n", os.Args[0])
-		fmt.Println("Options:")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
-	ignored := strings.Split(ignoring, ",")
-
-	fmt.Printf("Searching file(s): %s\n", fileName)
-	fmt.Printf("From line: %s\n", startingLine)
-	fmt.Printf("Ignoring these sheets: %s\n", ignored)
-
-	parsedStartingLine, error := strconv.Atoi(startingLine)
-
-	if error != nil {
-		fmt.Printf(error.Error())
-	}
-
-	readFile(fileName, parsedStartingLine, ignored)
-
+	return str
 }
 
-func init() {
-	flag.StringVarP(&fileName, "fileName", "f", "", "file name")
-	flag.StringVarP(&startingLine, "startingLine", "l", "1", "starting line")
-	flag.StringVarP(&ignoring, "ignoring", "i", "", "ignoring sheet")
-}
-
-func readFile(fileName string, startingLine int, ignored []string) {
-	xlFile, error := xlsx.OpenFile(fileName)
-
-	if error == nil {
-		for _, sheet := range xlFile.Sheets {
-			sheetName := sheet.Name
-			fmt.Printf("Sheet name: %s", sheetName)
-			fmt.Printf("\n")
-
-			if contains(ignored, sheetName) == false {
-				readSheet(sheet, startingLine)
-			}
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
 		}
 	}
-	if error != nil {
-		fmt.Printf(error.Error())
+	return false
+}
+
+func readRow(row *xlsx.Row) []string {
+	values := []string{}
+
+	for _, cell := range row.Cells {
+		values = append(values, cell.String())
 	}
+
+	return values
+}
+
+func createRequestFile(bucketName string, queries string, num int) {
+	str := "UPSERT INTO " + bucketName + " (KEY, VALUE) VALUES \n" + strings.TrimRight(queries, ", \n") + " Returning *;"
+	bytes := []byte(str)
+	fileName := bucketName + strconv.Itoa(num) + ".query.txt"
+
+	fmt.Printf(fileName)
+	fmt.Printf("\n")
+	ioutil.WriteFile("outputs/"+fileName, bytes, 0644)
 }
 
 func readSheet(sheet *xlsx.Sheet, startingLine int) {
@@ -118,37 +103,53 @@ func readSheet(sheet *xlsx.Sheet, startingLine int) {
 	createRequestFile(sheetName, buffer.String(), nbRequests)
 }
 
-func createRequestFile(bucketName string, queries string, num int) {
-	str := "UPSERT INTO " + bucketName + " (KEY, VALUE) VALUES \n" + strings.TrimRight(queries, ", \n") + " Returning *;"
-	bytes := []byte(str)
+func readFile(fileName string, startingLine int, ignored []string) {
+	xlFile, error := xlsx.OpenFile(fileName)
 
-	ioutil.WriteFile(bucketName+strconv.Itoa(num)+".query.txt", bytes, 0644)
-}
+	if error == nil {
+		for _, sheet := range xlFile.Sheets {
+			sheetName := sheet.Name
 
-func cleanString(str string) string {
-	str = strings.Replace(str, "'", "", -1)
-	str = strings.Replace(str, "é", "e", -1)
-	str = strings.Replace(str, " ", "_", -1)
-	str = strings.Replace(str, "-", "", -1)
-
-	return str
-}
-
-func readRow(row *xlsx.Row) []string {
-	values := []string{}
-
-	for _, cell := range row.Cells {
-		values = append(values, cell.String())
-	}
-
-	return values
-}
-
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
+			if contains(ignored, sheetName) == false {
+				readSheet(sheet, startingLine)
+			}
 		}
 	}
-	return false
+	if error != nil {
+		fmt.Printf(error.Error())
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	// if user does not supply flags, print usage
+	// we can clean this up later by putting this into its own function
+	if flag.NFlag() == 0 {
+		fmt.Printf("Usage: %s [options]\n", os.Args[0])
+		fmt.Println("Options:")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	ignored := strings.Split(ignoring, ",")
+
+	fmt.Printf("Searching file(s): %s\n", fileName)
+	fmt.Printf("From line: %s\n", startingLine)
+	fmt.Printf("Ignoring these sheets: %s\n", ignored)
+
+	parsedStartingLine, error := strconv.Atoi(startingLine)
+
+	if error != nil {
+		fmt.Printf(error.Error())
+	}
+
+	readFile(fileName, parsedStartingLine, ignored)
+
+}
+
+func init() {
+	flag.StringVarP(&fileName, "fileName", "f", "", "file name")
+	flag.StringVarP(&startingLine, "startingLine", "l", "1", "starting line")
+	flag.StringVarP(&ignoring, "ignoring", "i", "", "ignoring sheet")
 }
